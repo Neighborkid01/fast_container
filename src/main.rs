@@ -6,6 +6,17 @@ struct FastContainer<T> {
 }
 
 impl<T> FastContainer<T> {
+    pub fn get(&self, idx: usize) -> Option<&T> {
+        match self.index.get(idx) {
+            None => None,
+            Some(data_index) => {
+                let data_ref = self.data.get(*data_index);
+                assert!(data_ref.is_some(), "data_index: {} somehow points to a value outside data (len = {})", *data_index, self.data.len());
+                data_ref
+            }
+        }
+    }
+
     pub fn push(&mut self, el: T) {
         let index_len = self.index.len();
         assert!(self.data.len() <= index_len, "data.len() cannot be greater than index.len()");
@@ -28,4 +39,8 @@ fn main() {
     container.push(3);
 
     println!("{:?}", container);
+
+    for i in 0..4 {
+        println!("container[{:?}] = {:?}", i, container.get(i));
+    }
 }
