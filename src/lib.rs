@@ -1,11 +1,11 @@
 #[derive(Default, Clone)]
-pub struct FastContainer<T> {
+pub struct StableIndexVec<T> {
     index: Vec<usize>,
     ids: Vec<usize>,
     data: Vec<T>,
 }
 
-impl<T: std::fmt::Debug> std::fmt::Debug for FastContainer<T> {
+impl<T: std::fmt::Debug> std::fmt::Debug for StableIndexVec<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut debug_string = f.debug_struct("FastContainer");
         for (i, el) in self.data.iter().enumerate() {
@@ -15,7 +15,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for FastContainer<T> {
     }
 }
 
-impl<T> FastContainer<T> where T: PartialEq {
+impl<T> StableIndexVec<T> where T: PartialEq {
     /// Creates a new empty FastContainer
     pub fn new() -> Self {
         Self {
@@ -104,7 +104,7 @@ impl<T> FastContainer<T> where T: PartialEq {
 
 /// Iterator over IDs and references to elements in a FastContainer
 pub struct Iter<'a, T> {
-    container: &'a FastContainer<T>,
+    container: &'a StableIndexVec<T>,
     position: usize,
 }
 
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn add_and_get_work() {
-        let mut container = FastContainer::<isize>::new();
+        let mut container = StableIndexVec::<isize>::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn ids_are_stable_when_removing_from_start() {
-        let mut container = FastContainer::<isize>::new();
+        let mut container = StableIndexVec::<isize>::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn ids_are_stable_when_removing_from_middle() {
-        let mut container = FastContainer::<isize>::new();
+        let mut container = StableIndexVec::<isize>::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn ids_are_stable_when_removing_from_end() {
-        let mut container = FastContainer::<isize>::new();
+        let mut container = StableIndexVec::<isize>::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn ids_are_reused_after_removal() {
-        let mut container = FastContainer::<isize>::new();
+        let mut container = StableIndexVec::<isize>::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -226,14 +226,14 @@ mod tests {
 
     #[test]
     fn getting_invalid_index_returns_none() {
-        let container = FastContainer::<isize>::new();
+        let container = StableIndexVec::<isize>::new();
         assert_eq!(container.get(0), None);
         assert_eq!(container.get(100), None);
     }
 
     #[test]
     fn removing_invalid_index_returns_none() {
-        let mut container = FastContainer::<isize>::new();
+        let mut container = StableIndexVec::<isize>::new();
         container.add(1);
 
         assert_eq!(container.remove(100), None);
@@ -241,7 +241,7 @@ mod tests {
 
     #[test]
     fn iter_yields_all_elements() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn iter_skips_removed_elements() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         let id = container.add(2);
         container.add(3);
@@ -277,14 +277,14 @@ mod tests {
 
     #[test]
     fn iter_works_on_empty_container() {
-        let container = FastContainer::<isize>::new();
+        let container = StableIndexVec::<isize>::new();
         let collected: Vec<_> = container.iter().collect();
         assert_eq!(collected.len(), 0);
     }
 
     #[test]
     fn iter_ids_match_get() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn iter_count_matches_elements_after_operations() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         let id1 = container.add(1);
         container.add(2);
         let id3 = container.add(3);
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn ids_returns_all_valid_ids() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -330,7 +330,7 @@ mod tests {
 
     #[test]
     fn ids_excludes_removed_elements() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         let id1 = container.add(1);
         let id2 = container.add(2);
         let id3 = container.add(3);
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn ids_is_lazy() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
@@ -363,14 +363,14 @@ mod tests {
 
     #[test]
     fn ids_works_on_empty_container() {
-        let container = FastContainer::<isize>::new();
+        let container = StableIndexVec::<isize>::new();
         let ids: Vec<_> = container.ids().collect();
         assert_eq!(ids.len(), 0);
     }
 
     #[test]
     fn ids_are_all_valid() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn values_returns_all_valid_values() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn values_excludes_removed_elements() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         let id2 = container.add(2);
         container.add(3);
@@ -415,7 +415,7 @@ mod tests {
 
     #[test]
     fn values_is_lazy() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
@@ -431,14 +431,14 @@ mod tests {
 
     #[test]
     fn values_works_on_empty_container() {
-        let container = FastContainer::<isize>::new();
+        let container = StableIndexVec::<isize>::new();
         let values: Vec<_> = container.ids().collect();
         assert_eq!(values.len(), 0);
     }
 
     #[test]
     fn values_are_all_valid() {
-        let mut container = FastContainer::new();
+        let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
