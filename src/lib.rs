@@ -1,0 +1,196 @@
+#[derive(Default, Clone)]
+pub struct FastContainer<T> {
+    index: Vec<usize>,
+    ids: Vec<usize>,
+    data: Vec<T>,
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for FastContainer<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug_string = f.debug_struct("FastContainer");
+        for (i, el) in self.data.iter().enumerate() {
+            debug_string.field(&self.ids[i].to_string(), el);
+        }
+        debug_string.finish()
+    }
+}
+
+impl<T> FastContainer<T> {
+    /// Creates a new empty FastContainer
+    pub fn new() -> Self {
+        Self {
+            index: Vec::new(),
+            ids: Vec::new(),
+            data: Vec::new(),
+        }
+    }
+
+    /// Gets an optional reference to an element by its ID
+    pub fn get(&self, id: usize) -> Option<&T> {
+        match self.index.get(id) {
+            None => None,
+            Some(data_index) => self.data.get(*data_index),
+        }
+    }
+
+    /// Adds an element to the container and returns its ID
+    pub fn add(&mut self, el: T) -> usize {
+        let index_len = self.index.len();
+        let data_len = self.data.len();
+        assert!(data_len <= index_len, "data.len() cannot be greater than index.len()");
+
+        if data_len == index_len {
+            self.index.push(index_len);
+            self.ids.push(index_len);
+        }
+
+        self.data.push(el);
+        self.ids[data_len]
+    }
+
+    /// Removes an element from the container by its ID
+    pub fn remove(&mut self, id: usize) -> Option<T> {
+        let data_index = *self.index.get(id)?;
+        self.data.get(data_index)?;
+
+        let last_index = self.data.len() - 1;
+        if data_index < last_index {
+            self.data.swap(data_index, last_index);
+            self.ids.swap(data_index, last_index);
+            self.index[self.ids[data_index]] = data_index;
+            self.index[self.ids[last_index]] = last_index;
+        }
+
+        self.data.pop()
+    }
+
+    /// Internal debugging method that shows all internal vectors
+    /// This is not public and is only used for testing and development
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn debug_internals(&self) -> String
+    where
+        T: std::fmt::Debug,
+    {
+        format!(
+            "FastContainer {{\n  index: {:?},\n  ids: {:?},\n  data: {:?}\n}}",
+            self.index, self.ids, self.data
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_and_get_work() {
+        let mut container = FastContainer::<isize>::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+        let id4 = container.add(4);
+
+        assert_eq!(container.get(id1), Some(&1));
+        assert_eq!(container.get(id2), Some(&2));
+        assert_eq!(container.get(id3), Some(&3));
+        assert_eq!(container.get(id4), Some(&4));
+    }
+
+    #[test]
+    fn ids_are_stable_when_removing_from_start() {
+        let mut container = FastContainer::<isize>::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+        let id4 = container.add(4);
+
+        let removed = container.remove(id1);
+        assert_eq!(removed, Some(1));
+
+        assert_eq!(container.get(id1), None);
+        assert_eq!(container.get(id2), Some(&2));
+        assert_eq!(container.get(id3), Some(&3));
+        assert_eq!(container.get(id4), Some(&4));
+    }
+
+    #[test]
+    fn ids_are_stable_when_removing_from_middle() {
+        let mut container = FastContainer::<isize>::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+        let id4 = container.add(4);
+
+        let removed = container.remove(id2);
+        assert_eq!(removed, Some(2));
+
+        assert_eq!(container.get(id1), Some(&1));
+        assert_eq!(container.get(id2), None);
+        assert_eq!(container.get(id3), Some(&3));
+        assert_eq!(container.get(id4), Some(&4));
+    }
+
+    #[test]
+    fn ids_are_stable_when_removing_from_end() {
+        let mut container = FastContainer::<isize>::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+        let id4 = container.add(4);
+
+        let removed = container.remove(id4);
+        assert_eq!(removed, Some(4));
+
+        assert_eq!(container.get(id1), Some(&1));
+        assert_eq!(container.get(id2), Some(&2));
+        assert_eq!(container.get(id3), Some(&3));
+        assert_eq!(container.get(id4), None);
+    }
+
+    #[test]
+    fn ids_are_reused_after_removal() {
+        let mut container = FastContainer::<isize>::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+        let id4 = container.add(4);
+
+        container.remove(id2);
+        container.remove(id4);
+
+        assert_eq!(container.get(id1), Some(&1));
+        assert_eq!(container.get(id2), None);
+        assert_eq!(container.get(id3), Some(&3));
+        assert_eq!(container.get(id4), None);
+
+        let id5 = container.add(5);
+        let id6 = container.add(6);
+
+        // IDs are reused after free
+        assert_eq!(id5, id4);
+        assert_eq!(id6, id2);
+
+        assert_eq!(container.get(id1), Some(&1));
+        assert_eq!(container.get(id2), Some(&6));
+        assert_eq!(container.get(id3), Some(&3));
+        assert_eq!(container.get(id4), Some(&5));
+        assert_eq!(container.get(id5), Some(&5));
+        assert_eq!(container.get(id6), Some(&6));
+    }
+
+    #[test]
+    fn getting_invalid_index_returns_none() {
+        let container = FastContainer::<isize>::new();
+        assert_eq!(container.get(0), None);
+        assert_eq!(container.get(100), None);
+    }
+
+    #[test]
+    fn removing_invalid_index_returns_none() {
+        let mut container = FastContainer::<isize>::new();
+        container.add(1);
+
+        assert_eq!(container.remove(100), None);
+    }
+}
