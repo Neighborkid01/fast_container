@@ -77,6 +77,36 @@ impl<T> FastContainer<T> {
             self.index, self.ids, self.data
         )
     }
+
+    /// Returns an iterator over all id-value pairs in the container. The iterator element type is (usize, &'a T)
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter {
+            container: self,
+            position: 0,
+        }
+    }
+}
+
+/// Iterator over IDs and references to elements in a FastContainer
+pub struct Iter<'a, T> {
+    container: &'a FastContainer<T>,
+    position: usize,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = (usize, &'a T);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.position >= self.container.data.len() {
+            return None;
+        }
+
+        let current_pos = self.position;
+        self.position += 1;
+
+        let id = self.container.ids[current_pos];
+        Some((id, &self.container.data[current_pos]))
+    }
 }
 
 #[cfg(test)]
@@ -192,5 +222,79 @@ mod tests {
         container.add(1);
 
         assert_eq!(container.remove(100), None);
+    }
+
+    #[test]
+    fn iter_yields_all_elements() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        let collected: Vec<_> = container.iter().collect();
+
+        assert_eq!(collected.len(), 3);
+
+        let values: Vec<_> = collected.iter().map(|(_, v)| **v).collect();
+        assert!(values.contains(&1));
+        assert!(values.contains(&2));
+        assert!(values.contains(&3));
+    }
+
+    #[test]
+    fn iter_skips_removed_elements() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        let id = container.add(2);
+        container.add(3);
+
+        container.remove(id);
+
+        let collected: Vec<_> = container.iter().collect();
+
+        assert_eq!(collected.len(), 2);
+
+        let values: Vec<_> = collected.iter().map(|(_, v)| **v).collect();
+        assert!(values.contains(&1));
+        assert!(!values.contains(&2)); // removed value should not be present
+        assert!(values.contains(&3));
+    }
+
+    #[test]
+    fn iter_works_on_empty_container() {
+        let container = FastContainer::<isize>::new();
+        let collected: Vec<_> = container.iter().collect();
+        assert_eq!(collected.len(), 0);
+    }
+
+    #[test]
+    fn iter_ids_match_get() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        for (id, value) in container.iter() {
+            assert_eq!(container.get(id), Some(value));
+        }
+    }
+
+    #[test]
+    fn iter_count_matches_elements_after_operations() {
+        let mut container = FastContainer::new();
+        let id1 = container.add(1);
+        container.add(2);
+        let id3 = container.add(3);
+        container.add(4);
+
+        container.remove(id1);
+        container.remove(id3);
+
+        let count = container.iter().count();
+        assert_eq!(count, 2);
+
+        container.add(5);
+        let count = container.iter().count();
+        assert_eq!(count, 3);
     }
 }
