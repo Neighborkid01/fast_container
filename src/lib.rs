@@ -15,7 +15,7 @@ impl<T: std::fmt::Debug> std::fmt::Debug for FastContainer<T> {
     }
 }
 
-impl<T> FastContainer<T> {
+impl<T> FastContainer<T> where T: PartialEq {
     /// Creates a new empty FastContainer
     pub fn new() -> Self {
         Self {
@@ -31,6 +31,11 @@ impl<T> FastContainer<T> {
             None => None,
             Some(data_index) => self.data.get(*data_index),
         }
+    }
+
+    /// Checks if the given element exists in the container
+    pub fn contains(&self, el: &T) -> bool {
+        self.data.contains(el)
     }
 
     /// Adds an element to the container and returns its ID
@@ -89,6 +94,11 @@ impl<T> FastContainer<T> {
     /// Returns an iterator over the valid IDs in the container
     pub fn ids(&self) -> impl Iterator<Item = usize> + '_ {
         self.iter().map(|(id, _)| id)
+    }
+
+    /// Returns an iterator over the values in the container
+    pub fn values(&self) -> impl Iterator<Item = &T> + '_ {
+        self.iter().map(|(_, value)| value)
     }
 }
 
@@ -359,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn ids_all_are_valid() {
+    fn ids_are_all_valid() {
         let mut container = FastContainer::new();
         container.add(1);
         container.add(2);
@@ -368,6 +378,73 @@ mod tests {
         // Every ID from ids() should work with get()
         for id in container.ids() {
             assert!(container.get(id).is_some());
+        }
+    }
+
+    #[test]
+    fn values_returns_all_valid_values() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        let mut values: Vec<_> = container.values().collect();
+
+        assert_eq!(values.len(), 3);
+
+        values.sort();
+        assert_eq!(values, [&1, &2, &3]);
+    }
+
+    #[test]
+    fn values_excludes_removed_elements() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        let id2 = container.add(2);
+        container.add(3);
+
+        container.remove(id2);
+
+        let mut values: Vec<_> = container.values().collect();
+
+        assert_eq!(values.len(), 2);
+
+        values.sort();
+        assert_eq!(values, [&1, &3]);
+    }
+
+    #[test]
+    fn values_is_lazy() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        // Getting just the first value should not iterate through all
+        let first_value = container.values().next();
+        assert!(first_value.is_some());
+
+        // Can get just the first 2 values
+        let first_two: Vec<_> = container.values().take(2).collect();
+        assert_eq!(first_two.len(), 2);
+    }
+
+    #[test]
+    fn values_works_on_empty_container() {
+        let container = FastContainer::<isize>::new();
+        let values: Vec<_> = container.ids().collect();
+        assert_eq!(values.len(), 0);
+    }
+
+    #[test]
+    fn values_are_all_valid() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        for value in container.values() {
+            assert!(container.contains(value));
         }
     }
 }
