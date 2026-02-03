@@ -85,6 +85,11 @@ impl<T> FastContainer<T> {
             position: 0,
         }
     }
+
+    /// Returns an iterator over the valid IDs in the container
+    pub fn ids(&self) -> impl Iterator<Item = usize> + '_ {
+        self.iter().map(|(id, _)| id)
+    }
 }
 
 /// Iterator over IDs and references to elements in a FastContainer
@@ -296,5 +301,73 @@ mod tests {
         container.add(5);
         let count = container.iter().count();
         assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn ids_returns_all_valid_ids() {
+        let mut container = FastContainer::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+
+        let mut ids: Vec<_> = container.ids().collect();
+
+        assert_eq!(ids.len(), 3);
+
+        ids.sort();
+        assert_eq!(ids, [id1, id2, id3]);
+    }
+
+    #[test]
+    fn ids_excludes_removed_elements() {
+        let mut container = FastContainer::new();
+        let id1 = container.add(1);
+        let id2 = container.add(2);
+        let id3 = container.add(3);
+
+        container.remove(id2);
+
+        let mut ids: Vec<_> = container.ids().collect();
+
+        assert_eq!(ids.len(), 2);
+
+        ids.sort();
+        assert_eq!(ids, [id1, id3]);
+    }
+
+    #[test]
+    fn ids_is_lazy() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        // Getting just the first ID should not iterate through all
+        let first_id = container.ids().next();
+        assert!(first_id.is_some());
+
+        // Can get just the first 2 IDs
+        let first_two: Vec<_> = container.ids().take(2).collect();
+        assert_eq!(first_two.len(), 2);
+    }
+
+    #[test]
+    fn ids_works_on_empty_container() {
+        let container = FastContainer::<isize>::new();
+        let ids: Vec<_> = container.ids().collect();
+        assert_eq!(ids.len(), 0);
+    }
+
+    #[test]
+    fn ids_all_are_valid() {
+        let mut container = FastContainer::new();
+        container.add(1);
+        container.add(2);
+        container.add(3);
+
+        // Every ID from ids() should work with get()
+        for id in container.ids() {
+            assert!(container.get(id).is_some());
+        }
     }
 }
