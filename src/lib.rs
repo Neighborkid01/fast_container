@@ -1,13 +1,26 @@
 #[derive(Default, Clone)]
 pub struct StableIndexVec<T> {
     index: Vec<usize>,
+    generations: Vec<usize>,
     ids: Vec<usize>,
     data: Vec<T>,
 }
 
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SIVKey {
+    id: usize,
+    generation: usize,
+}
+
+impl SIVKey {
+    pub fn new(id: usize, generation: usize) -> Self {
+        Self { id, generation }
+    }
+}
+
 impl<T: std::fmt::Debug> std::fmt::Debug for StableIndexVec<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut debug_string = f.debug_struct("FastContainer");
+        let mut debug_string = f.debug_struct("StableIndexVec");
         for (i, el) in self.data.iter().enumerate() {
             debug_string.field(&self.ids[i].to_string(), el);
         }
@@ -16,56 +29,72 @@ impl<T: std::fmt::Debug> std::fmt::Debug for StableIndexVec<T> {
 }
 
 impl<T> StableIndexVec<T> where T: PartialEq {
-    /// Creates a new empty FastContainer
+    /// Creates a new empty StableIndexVec
     pub fn new() -> Self {
         Self {
             index: Vec::new(),
+            generations: Vec::new(),
             ids: Vec::new(),
             data: Vec::new(),
         }
     }
 
-    /// Gets the length of the container's data vector
+    fn data_index(&self, key: SIVKey) -> Option<usize> {
+        let data_index = self.index.get(key.id)?;
+        match self.generations.get(*data_index) {
+            Some(generation) if *generation == key.generation => Some(*data_index),
+            _ => None,
+        }
+    }
+
+    /// Gets the length of the data vector
     pub fn len(&self) -> usize {
         self.data.len()
     }
 
-    /// Gets an optional reference to an element by its ID
-    pub fn get(&self, id: usize) -> Option<&T> {
-        match self.index.get(id) {
-            None => None,
-            Some(data_index) => self.data.get(*data_index),
-        }
+    /// Gets an optional reference to an element by its key
+    pub fn get(&self, key: SIVKey) -> Option<&T> {
+        let data_index = self.data_index(key)?;
+        self.data.get(data_index)
     }
+
 
     /// Checks if the given element exists in the container
     pub fn contains(&self, el: &T) -> bool {
         self.data.contains(el)
     }
 
-    /// Adds an element to the container and returns its ID
-    pub fn add(&mut self, el: T) -> usize {
+    /// Adds an element to the container and returns its key
+    pub fn add(&mut self, el: T) -> SIVKey {
         let index_len = self.index.len();
         let data_len = self.data.len();
         assert!(data_len <= index_len, "data.len() cannot be greater than index.len()");
 
         if data_len == index_len {
-            self.index.push(index_len);
+            self.index.push(data_len);
+            self.generations.push(0);
             self.ids.push(index_len);
+        } else {
+            self.generations[data_len] += 1;
         }
 
         self.data.push(el);
-        self.ids[data_len]
+
+        SIVKey {
+            id: self.ids[data_len],
+            generation: self.generations[data_len]
+        }
     }
 
-    /// Removes an element from the container by its ID
-    pub fn remove(&mut self, id: usize) -> Option<T> {
-        let data_index = *self.index.get(id)?;
+    /// Removes an element from the container by its key
+    pub fn remove(&mut self, key: SIVKey) -> Option<T> {
+        let data_index = self.data_index(key)?;
         self.data.get(data_index)?;
 
         let last_index = self.data.len() - 1;
         if data_index < last_index {
             self.data.swap(data_index, last_index);
+            self.generations.swap(data_index, last_index);
             self.ids.swap(data_index, last_index);
             self.index[self.ids[data_index]] = data_index;
             self.index[self.ids[last_index]] = last_index;
@@ -83,12 +112,12 @@ impl<T> StableIndexVec<T> where T: PartialEq {
         T: std::fmt::Debug,
     {
         format!(
-            "FastContainer {{\n  index: {:?},\n  ids: {:?},\n  data: {:?}\n}}",
-            self.index, self.ids, self.data
+            "StableIndexVec {{\n  index: {:?},\n generations: {:?},\n  ids: {:?},\n  data: {:?}\n}}",
+            self.index, self.generations, self.ids, self.data
         )
     }
 
-    /// Returns an iterator over all id-value pairs in the container. The iterator element type is (usize, &'a T)
+    /// Returns an iterator over all key-value pairs in the container. The iterator element type is (SIVKey, &'a T)
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             container: self,
@@ -96,9 +125,9 @@ impl<T> StableIndexVec<T> where T: PartialEq {
         }
     }
 
-    /// Returns an iterator over the valid IDs in the container
-    pub fn ids(&self) -> impl Iterator<Item = usize> + '_ {
-        self.iter().map(|(id, _)| id)
+    /// Returns an iterator over the valid keys in the container
+    pub fn keys(&self) -> impl Iterator<Item = SIVKey> + '_ {
+        self.iter().map(|(key, _)| key)
     }
 
     /// Returns an iterator over the values in the container
@@ -107,14 +136,14 @@ impl<T> StableIndexVec<T> where T: PartialEq {
     }
 }
 
-/// Iterator over IDs and references to elements in a FastContainer
+/// Iterator over keys and references to elements in a StableIndexVec
 pub struct Iter<'a, T> {
     container: &'a StableIndexVec<T>,
     position: usize,
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = (usize, &'a T);
+    type Item = (SIVKey, &'a T);
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.position >= self.container.data.len() {
@@ -125,7 +154,11 @@ impl<'a, T> Iterator for Iter<'a, T> {
         self.position += 1;
 
         let id = self.container.ids[current_pos];
-        Some((id, &self.container.data[current_pos]))
+        let key = SIVKey {
+            id,
+            generation: self.container.generations[id],
+        };
+        Some((key, &self.container.data[current_pos]))
     }
 }
 
@@ -136,158 +169,153 @@ mod tests {
     #[test]
     fn len_is_correct() {
         let mut container = StableIndexVec::<isize>::new();
-        let id1 = container.add(1);
+        let key1 = container.add(1);
         assert_eq!(container.len(), 1);
 
-        let id2 = container.add(2);
+        let key2 = container.add(2);
         assert_eq!(container.len(), 2);
 
-        let id3 = container.add(3);
+        let key3 = container.add(3);
         assert_eq!(container.len(), 3);
 
-        let id4 = container.add(4);
+        let key4 = container.add(4);
         assert_eq!(container.len(), 4);
 
-        container.remove(id1);
+        container.remove(key1);
         assert_eq!(container.len(), 3);
 
-        container.remove(id3);
+        container.remove(key3);
         assert_eq!(container.len(), 2);
 
-        container.remove(id2);
+        container.remove(key2);
         assert_eq!(container.len(), 1);
 
-        container.remove(id4);
+        container.remove(key4);
         assert_eq!(container.len(), 0);
     }
 
     #[test]
     fn add_and_get_work() {
         let mut container = StableIndexVec::<isize>::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
-        let id4 = container.add(4);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
+        let key4 = container.add(4);
 
-        assert_eq!(container.get(id1), Some(&1));
-        assert_eq!(container.get(id2), Some(&2));
-        assert_eq!(container.get(id3), Some(&3));
-        assert_eq!(container.get(id4), Some(&4));
+        assert_eq!(container.get(key1), Some(&1));
+        assert_eq!(container.get(key2), Some(&2));
+        assert_eq!(container.get(key3), Some(&3));
+        assert_eq!(container.get(key4), Some(&4));
     }
 
     #[test]
-    fn ids_are_stable_when_removing_from_start() {
+    fn keys_are_stable_when_removing_from_start() {
         let mut container = StableIndexVec::<isize>::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
-        let id4 = container.add(4);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
+        let key4 = container.add(4);
 
-        let removed = container.remove(id1);
+        let removed = container.remove(key1);
         assert_eq!(removed, Some(1));
 
-        assert_eq!(container.get(id1), None);
-        assert_eq!(container.get(id2), Some(&2));
-        assert_eq!(container.get(id3), Some(&3));
-        assert_eq!(container.get(id4), Some(&4));
+        assert_eq!(container.get(key1), None);
+        assert_eq!(container.get(key2), Some(&2));
+        assert_eq!(container.get(key3), Some(&3));
+        assert_eq!(container.get(key4), Some(&4));
     }
 
     #[test]
-    fn ids_are_stable_when_removing_from_middle() {
+    fn keys_are_stable_when_removing_from_middle() {
         let mut container = StableIndexVec::<isize>::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
-        let id4 = container.add(4);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
+        let key4 = container.add(4);
 
-        let removed = container.remove(id2);
+        let removed = container.remove(key2);
         assert_eq!(removed, Some(2));
 
-        assert_eq!(container.get(id1), Some(&1));
-        assert_eq!(container.get(id2), None);
-        assert_eq!(container.get(id3), Some(&3));
-        assert_eq!(container.get(id4), Some(&4));
+        assert_eq!(container.get(key1), Some(&1));
+        assert_eq!(container.get(key2), None);
+        assert_eq!(container.get(key3), Some(&3));
+        assert_eq!(container.get(key4), Some(&4));
     }
 
     #[test]
-    fn ids_are_stable_when_removing_from_end() {
+    fn keys_are_stable_when_removing_from_end() {
         let mut container = StableIndexVec::<isize>::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
-        let id4 = container.add(4);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
+        let key4 = container.add(4);
 
-        let removed = container.remove(id4);
+        let removed = container.remove(key4);
         assert_eq!(removed, Some(4));
 
-        assert_eq!(container.get(id1), Some(&1));
-        assert_eq!(container.get(id2), Some(&2));
-        assert_eq!(container.get(id3), Some(&3));
-        assert_eq!(container.get(id4), None);
+        assert_eq!(container.get(key1), Some(&1));
+        assert_eq!(container.get(key2), Some(&2));
+        assert_eq!(container.get(key3), Some(&3));
+        assert_eq!(container.get(key4), None);
     }
 
     #[test]
-    fn ids_are_reused_after_removal() {
+    fn keys_are_not_reused_after_removal() {
         let mut container = StableIndexVec::<isize>::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
-        let id4 = container.add(4);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
+        let key4 = container.add(4);
 
-        container.remove(id2);
-        container.remove(id4);
+        container.remove(key2);
+        container.remove(key4);
 
-        assert_eq!(container.get(id1), Some(&1));
-        assert_eq!(container.get(id2), None);
-        assert_eq!(container.get(id3), Some(&3));
-        assert_eq!(container.get(id4), None);
+        assert_eq!(container.get(key1), Some(&1));
+        assert_eq!(container.get(key2), None);
+        assert_eq!(container.get(key3), Some(&3));
+        assert_eq!(container.get(key4), None);
 
-        let id5 = container.add(5);
-        let id6 = container.add(6);
+        let key5 = container.add(5);
+        let key6 = container.add(6);
 
-        // IDs are reused after free
-        assert_eq!(id5, id4);
-        assert_eq!(id6, id2);
+        // keys are not reused after free
+        assert!(![key2, key4].contains(&key5));
+        assert!(![key2, key4].contains(&key6));
 
-        assert_eq!(container.get(id1), Some(&1));
-        assert_eq!(container.get(id2), Some(&6));
-        assert_eq!(container.get(id3), Some(&3));
-        assert_eq!(container.get(id4), Some(&5));
-        assert_eq!(container.get(id5), Some(&5));
-        assert_eq!(container.get(id6), Some(&6));
-    }
-
-    #[test]
-    fn getting_invalid_index_returns_none() {
-        let container = StableIndexVec::<isize>::new();
-        assert_eq!(container.get(0), None);
-        assert_eq!(container.get(100), None);
+        assert_eq!(container.get(key1), Some(&1));
+        assert_eq!(container.get(key2), None);
+        assert_eq!(container.get(key3), Some(&3));
+        assert_eq!(container.get(key4), None);
+        assert_eq!(container.get(key5), Some(&5));
+        assert_eq!(container.get(key6), Some(&6));
     }
 
     #[test]
     fn removing_valid_index_returns_value() {
         let mut container = StableIndexVec::<isize>::new();
-        let id = container.add(1);
+        let key = container.add(1);
 
-        assert_eq!(container.remove(id), Some(1));
-        assert_eq!(container.get(id), None);
+        assert_eq!(container.remove(key), Some(1));
+        assert_eq!(container.get(key), None);
     }
 
     #[test]
     fn removing_invalid_index_returns_none() {
         let mut container = StableIndexVec::<isize>::new();
+        let key = container.add(1);
+        container.remove(key);
         container.add(1);
 
-        assert_eq!(container.remove(100), None);
+        assert_eq!(container.remove(key), None);
     }
 
     #[test]
     fn removing_valid_index_twice_returns_none() {
         let mut container = StableIndexVec::<isize>::new();
-        let id = container.add(1);
+        let key = container.add(1);
 
-        assert_eq!(container.remove(id), Some(1));
-        assert_eq!(container.remove(id), None);
+        assert_eq!(container.remove(key), Some(1));
+        assert_eq!(container.remove(key), None);
     }
 
     #[test]
@@ -311,10 +339,10 @@ mod tests {
     fn iter_skips_removed_elements() {
         let mut container = StableIndexVec::new();
         container.add(1);
-        let id = container.add(2);
+        let key = container.add(2);
         container.add(3);
 
-        container.remove(id);
+        container.remove(key);
 
         let collected: Vec<_> = container.iter().collect();
 
@@ -334,27 +362,27 @@ mod tests {
     }
 
     #[test]
-    fn iter_ids_match_get() {
+    fn iter_keys_match_get() {
         let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
 
-        for (id, value) in container.iter() {
-            assert_eq!(container.get(id), Some(value));
+        for (key, value) in container.iter() {
+            assert_eq!(container.get(key), Some(value));
         }
     }
 
     #[test]
     fn iter_count_matches_elements_after_operations() {
         let mut container = StableIndexVec::new();
-        let id1 = container.add(1);
+        let key1 = container.add(1);
         container.add(2);
-        let id3 = container.add(3);
+        let key3 = container.add(3);
         container.add(4);
 
-        container.remove(id1);
-        container.remove(id3);
+        container.remove(key1);
+        container.remove(key3);
 
         let count = container.iter().count();
         assert_eq!(count, 2);
@@ -365,70 +393,70 @@ mod tests {
     }
 
     #[test]
-    fn ids_returns_all_valid_ids() {
+    fn keys_returns_all_valid_keys() {
         let mut container = StableIndexVec::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
 
-        let mut ids: Vec<_> = container.ids().collect();
+        let mut keys: Vec<_> = container.keys().collect();
 
-        assert_eq!(ids.len(), 3);
+        assert_eq!(keys.len(), 3);
 
-        ids.sort();
-        assert_eq!(ids, [id1, id2, id3]);
+        keys.sort();
+        assert_eq!(keys, [key1, key2, key3]);
     }
 
     #[test]
-    fn ids_excludes_removed_elements() {
+    fn keys_excludes_removed_elements() {
         let mut container = StableIndexVec::new();
-        let id1 = container.add(1);
-        let id2 = container.add(2);
-        let id3 = container.add(3);
+        let key1 = container.add(1);
+        let key2 = container.add(2);
+        let key3 = container.add(3);
 
-        container.remove(id2);
+        container.remove(key2);
 
-        let mut ids: Vec<_> = container.ids().collect();
+        let mut keys: Vec<_> = container.keys().collect();
 
-        assert_eq!(ids.len(), 2);
+        assert_eq!(keys.len(), 2);
 
-        ids.sort();
-        assert_eq!(ids, [id1, id3]);
+        keys.sort();
+        assert_eq!(keys, [key1, key3]);
     }
 
     #[test]
-    fn ids_is_lazy() {
+    fn keys_is_lazy() {
         let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
 
-        // Getting just the first ID should not iterate through all
-        let first_id = container.ids().next();
-        assert!(first_id.is_some());
+        // Getting just the first key should not iterate through all
+        let first_key = container.keys().next();
+        assert!(first_key.is_some());
 
-        // Can get just the first 2 IDs
-        let first_two: Vec<_> = container.ids().take(2).collect();
+        // Can get just the first 2 keys
+        let first_two: Vec<_> = container.keys().take(2).collect();
         assert_eq!(first_two.len(), 2);
     }
 
     #[test]
-    fn ids_works_on_empty_container() {
+    fn keys_works_on_empty_container() {
         let container = StableIndexVec::<isize>::new();
-        let ids: Vec<_> = container.ids().collect();
-        assert_eq!(ids.len(), 0);
+        let keys: Vec<_> = container.keys().collect();
+        assert_eq!(keys.len(), 0);
     }
 
     #[test]
-    fn ids_are_all_valid() {
+    fn keys_are_all_valid() {
         let mut container = StableIndexVec::new();
         container.add(1);
         container.add(2);
         container.add(3);
 
-        // Every ID from ids() should work with get()
-        for id in container.ids() {
-            assert!(container.get(id).is_some());
+        // Every key from keys() should work with get()
+        for key in container.keys() {
+            assert!(container.get(key).is_some());
         }
     }
 
@@ -451,10 +479,10 @@ mod tests {
     fn values_excludes_removed_elements() {
         let mut container = StableIndexVec::new();
         container.add(1);
-        let id2 = container.add(2);
+        let key2 = container.add(2);
         container.add(3);
 
-        container.remove(id2);
+        container.remove(key2);
 
         let mut values: Vec<_> = container.values().collect();
 
@@ -483,7 +511,7 @@ mod tests {
     #[test]
     fn values_works_on_empty_container() {
         let container = StableIndexVec::<isize>::new();
-        let values: Vec<_> = container.ids().collect();
+        let values: Vec<_> = container.keys().collect();
         assert_eq!(values.len(), 0);
     }
 
