@@ -25,6 +25,11 @@ impl<T> StableIndexVec<T> where T: PartialEq {
         }
     }
 
+    /// Gets the length of the container's data vector
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
     /// Gets an optional reference to an element by its ID
     pub fn get(&self, id: usize) -> Option<&T> {
         match self.index.get(id) {
@@ -127,6 +132,34 @@ impl<'a, T> Iterator for Iter<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn len_is_correct() {
+        let mut container = StableIndexVec::<isize>::new();
+        let id1 = container.add(1);
+        assert_eq!(container.len(), 1);
+
+        let id2 = container.add(2);
+        assert_eq!(container.len(), 2);
+
+        let id3 = container.add(3);
+        assert_eq!(container.len(), 3);
+
+        let id4 = container.add(4);
+        assert_eq!(container.len(), 4);
+
+        container.remove(id1);
+        assert_eq!(container.len(), 3);
+
+        container.remove(id3);
+        assert_eq!(container.len(), 2);
+
+        container.remove(id2);
+        assert_eq!(container.len(), 1);
+
+        container.remove(id4);
+        assert_eq!(container.len(), 0);
+    }
 
     #[test]
     fn add_and_get_work() {
@@ -232,11 +265,29 @@ mod tests {
     }
 
     #[test]
+    fn removing_valid_index_returns_value() {
+        let mut container = StableIndexVec::<isize>::new();
+        let id = container.add(1);
+
+        assert_eq!(container.remove(id), Some(1));
+        assert_eq!(container.get(id), None);
+    }
+
+    #[test]
     fn removing_invalid_index_returns_none() {
         let mut container = StableIndexVec::<isize>::new();
         container.add(1);
 
         assert_eq!(container.remove(100), None);
+    }
+
+    #[test]
+    fn removing_valid_index_twice_returns_none() {
+        let mut container = StableIndexVec::<isize>::new();
+        let id = container.add(1);
+
+        assert_eq!(container.remove(id), Some(1));
+        assert_eq!(container.remove(id), None);
     }
 
     #[test]
